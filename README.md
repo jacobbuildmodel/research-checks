@@ -55,7 +55,8 @@ and THESIS.md can never be declared.
 
 From `office/PURPOSE_PRINCIPLES.md` (15 October 2026): no seal without a GO or
 PAPER TRACK purpose review. Every commit in HEAD's history that **adds**
-`<piece>/SEALED`, `<piece>/SEAL_MANIFEST*` or `<piece>/office/SEAL.txt` fails
+`<piece>/SEALED`, `<piece>/SEAL_MANIFEST*` or `<piece>/office/SEAL.txt`
+(renaming another file into place counts as adding it) fails
 unless, in that same commit:
 
 - `<piece>/PURPOSE_REVIEW.md` exists;

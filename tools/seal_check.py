@@ -71,9 +71,13 @@ def load_exempt(path):
 
 
 def added_markers():
-    """(commit, path, piece) for every seal marker added in HEAD's history, oldest first."""
+    """(commit, path, piece) for every seal marker added in HEAD's history, oldest first.
+
+    --no-renames: with rename detection a marker created by renaming another file
+    (git mv notes.txt SEALED) shows as R, not A, and would pass with no review."""
     found, commit = [], None
-    for line in rc.out("log", "--reverse", "--diff-filter=A", "--name-only", "--format=@@%H", "HEAD").splitlines():
+    for line in rc.out("log", "--reverse", "--no-renames", "--diff-filter=A", "--name-only", "--format=@@%H",
+                       "HEAD").splitlines():
         if line.startswith("@@"):
             commit = line[2:]
         elif line.strip():

@@ -143,6 +143,17 @@ class PurposeGate(unittest.TestCase):
         code, out = self.gate()
         self.assertEqual(code, 1, out)
 
+    def test_marker_created_by_rename_fails(self):
+        # With git's default rename detection this commit is R notes.txt -> SEALED, not A.
+        self.r.commit("notes", {"p/THESIS.md": THESIS, "p/notes.txt": "data key\n"})
+        self.r.git("mv", "p/notes.txt", "p/SEALED")
+        self.r.git("commit", "-q", "-m", "rename into SEALED")
+        self.assertIn("R100", self.r.git("log", "-1", "--name-status", "--format="))
+        code, out = self.gate()
+        self.assertEqual(code, 1, out)
+        self.assertIn("p/SEALED added in", out)
+        self.assertIn("no p/PURPOSE_REVIEW.md in that commit", out)
+
     def test_record_marker_at_root_and_exempt_list(self):
         sha = self.r.commit("record", {"THESIS.md": THESIS, "office/SEAL.txt": "Seal commit abc\n"})
         code, out = self.gate()
