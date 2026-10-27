@@ -88,13 +88,13 @@ class PurposeGate(unittest.TestCase):
     def setUp(self):
         self.r = Repo()
         self.r.commit("start", {"README": "x\n"})
-        self.exempt = os.path.join(self.r.dir, "..", os.path.basename(self.r.dir) + "-exempt.txt")
-        with open(self.exempt, "w") as f:
+        fd, self.exempt = tempfile.mkstemp(prefix="rc-exempt-", suffix=".txt")
+        with os.fdopen(fd, "w") as f:
             f.write("# repository commit path why\n")
 
     def tearDown(self):
-        self.r.close()
         os.remove(self.exempt)
+        self.r.close()
 
     def gate(self):
         return self.r.run("seal_check.py", "purpose", "--repo", "r", "--exempt", self.exempt)
