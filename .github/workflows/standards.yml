@@ -1,0 +1,119 @@
+# Tier (iii): the fast half of hdb-affordability's check.sh (STANDARDS v2),
+# for every piece with a [pieces.<name>.standards] table in the caller's
+# .github/research-checks.toml. See tools/standards_fast.py.
+#
+# With parity = "<command>" in the table (e.g. "./check.sh"), the job also
+# runs that command and fails unless its output is line for line the port's
+# (run with the piece's length exemptions only), so the port can replace the
+# original once the two have agreed for long enough.
+#
+# Call it with the same full sha twice:
+#   uses: jacobbuildmodel/research-checks/.github/workflows/standards.yml@<sha>
+#   with:
+#     checks_sha: <sha>
+name: standards
+
+on:
+  workflow_call:
+    inputs:
+      checks_sha:
+        description: Full commit sha of jacobbuildmodel/research-checks, the same as in uses
+        required: true
+        type: string
+      config:
+        description: Path of the configuration in the calling repository
+        required: false
+        type: string
+        default: .github/research-checks.toml
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+    working-directory: repo
+
+jobs:
+  pieces:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    outputs:
+      list: ${{ steps.list.outputs.list }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          path: repo
+          persist-credentials: false
+      - name: checks_sha is a full commit sha
+        env:
+          SHA: ${{ inputs.checks_sha }}
+        run: |
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "checks_sha must be the full 40-character sha of research-checks, the same as in uses:"; exit 1; }
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: jacobbuildmodel/research-checks
+          ref: ${{ inputs.checks_sha }}
+          path: checks
+          persist-credentials: false
+      - id: list
+        env:
+          CONFIG: ${{ inputs.config }}
+        run: echo "list=$(python3 ../checks/tools/rc.py pieces standards --config "$CONFIG")" >> "$GITHUB_OUTPUT"
+
+  piece:
+    needs: pieces
+    if: needs.pieces.outputs.list != '[]'
+    name: ${{ matrix.piece.name }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        piece: ${{ fromJSON(needs.pieces.outputs.list) }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          path: repo
+          persist-credentials: false
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: jacobbuildmodel/research-checks
+          ref: ${{ inputs.checks_sha }}
+          path: checks
+          persist-credentials: false
+      # check.sh runs its import check under the Python it pins; the standard
+      # library's module list differs between versions.
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: ${{ matrix.piece.python }}
+      - name: standards, fast half
+        env:
+          CONFIG: ${{ inputs.config }}
+          PIECE: ${{ matrix.piece.name }}
+        run: |
+          set +e
+          python ../checks/tools/standards_fast.py --piece "$PIECE" --config "$CONFIG" > ../result.txt 2>&1
+          status=$?
+          cat ../result.txt
+          { echo "### Standards: $PIECE"; echo '```'; cat ../result.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          grep '^WARN  ' ../result.txt | sed 's/^WARN  /::warning title=standards '"$PIECE"'::/' || true
+          exit "$status"
+      - name: parity with the original
+        if: ${{ !cancelled() && matrix.piece.parity != '' }}
+        env:
+          CONFIG: ${{ inputs.config }}
+          PIECE: ${{ matrix.piece.name }}
+          PARITY: ${{ matrix.piece.parity }}
+        run: |
+          set +e
+          bash -c "$PARITY" > ../original.txt 2>&1
+          original=$?
+          python ../checks/tools/standards_fast.py --piece "$PIECE" --config "$CONFIG" --plain > ../port.txt 2>&1
+          port=$?
+          if diff -u ../original.txt ../port.txt && [ "$original" = "$port" ]; then
+            echo "parity: '$PARITY' and the port agree line for line (exit $port)"
+          else
+            echo "::error title=parity $PIECE::'$PARITY' (exit $original) and the port (exit $port) differ"
+            exit 1
+          fi

@@ -1,0 +1,21 @@
+# Configuration for the self-test: research-checks calls its own reusable
+# workflows on this fixture piece on every pull request (selftest.yml).
+
+[pieces.fixture]
+dir = "tests/e2e/piece"
+python = "3.11"
+requirements = "tests/e2e/piece/requirements.txt"
+
+[pieces.fixture.seal]
+kind = "manifest"
+thesis = "strict"
+
+[pieces.fixture.fast]
+tests = "tests/e2e/piece/tests"
+manifest = "cd tests/e2e/piece && md5sum -c CHECKSUMS.md5"
+
+[pieces.fixture.standards]
+
+[pieces.fixture.rebuild]
+clean = "tests/e2e/piece/out"
+command = "python tests/e2e/piece/10_build.py"

@@ -1,0 +1,144 @@
+# Rebuild tier: for every piece with a [pieces.<name>.rebuild] table in the
+# caller's .github/research-checks.toml, delete its generated outputs
+# (clean = "<paths>", space-separated), run its pipeline (command = "<command>",
+# e.g. "bash erp/run_all.sh") from the repository root, and compare every
+# committed file with what the rebuild wrote.
+#
+# Non-blocking unless the caller passes blocking: true. A non-blocking run
+# stays green and reports each difference as a warning and in the job summary;
+# Linux and Windows builds are expected to differ in some bytes (fonts, SVG
+# text) until each piece is shown to reproduce here.
+#
+# Call it with the same full sha twice:
+#   uses: jacobbuildmodel/research-checks/.github/workflows/rebuild.yml@<sha>
+#   with:
+#     checks_sha: <sha>
+name: rebuild
+
+on:
+  workflow_call:
+    inputs:
+      checks_sha:
+        description: Full commit sha of jacobbuildmodel/research-checks, the same as in uses
+        required: true
+        type: string
+      config:
+        description: Path of the configuration in the calling repository
+        required: false
+        type: string
+        default: .github/research-checks.toml
+      blocking:
+        description: Fail the job when the rebuild fails or differs (false reports only)
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+    working-directory: repo
+
+jobs:
+  pieces:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    outputs:
+      list: ${{ steps.list.outputs.list }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          path: repo
+          persist-credentials: false
+      - name: checks_sha is a full commit sha
+        env:
+          SHA: ${{ inputs.checks_sha }}
+        run: |
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "checks_sha must be the full 40-character sha of research-checks, the same as in uses:"; exit 1; }
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: jacobbuildmodel/research-checks
+          ref: ${{ inputs.checks_sha }}
+          path: checks
+          persist-credentials: false
+      - id: list
+        env:
+          CONFIG: ${{ inputs.config }}
+        run: echo "list=$(python3 ../checks/tools/rc.py pieces rebuild --config "$CONFIG")" >> "$GITHUB_OUTPUT"
+
+  piece:
+    needs: pieces
+    if: needs.pieces.outputs.list != '[]'
+    name: ${{ matrix.piece.name }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        piece: ${{ fromJSON(needs.pieces.outputs.list) }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          path: repo
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: ${{ matrix.piece.python }}
+      - name: pinned requirements
+        if: matrix.piece.requirements != ''
+        env:
+          REQ: ${{ matrix.piece.requirements }}
+        run: |
+          args=()
+          for r in $REQ; do args+=(-r "$r"); done
+          python -m pip install --disable-pip-version-check "${args[@]}"
+          python --version
+      - name: rebuild from clean and compare with the committed files
+        env:
+          PIECE: ${{ matrix.piece.name }}
+          CLEAN: ${{ matrix.piece.clean }}
+          COMMAND: ${{ matrix.piece.command }}
+          BLOCKING: ${{ inputs.blocking }}
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          set +e
+          for p in $CLEAN; do rm -rf -- "$p"; done
+          bash -c "$COMMAND" > ../rebuild.log 2>&1
+          status=$?
+          tail -n 60 ../rebuild.log
+          changes=$(git status --porcelain --untracked-files=all)
+          {
+            echo "### Rebuild: $PIECE"
+            echo "Command: \`$COMMAND\` after deleting \`${CLEAN:-nothing}\`; exit $status."
+            if [ -z "$changes" ]; then
+              echo "Every committed file is byte-identical after the rebuild."
+            else
+              echo "Files that differ after the rebuild (M changed, D not rebuilt, ?? new and not committed):"
+              echo '```'
+              git status --porcelain --untracked-files=all | while read -r code path; do
+                if [ "$code" = "M" ]; then
+                  echo "$code $path  committed $(git show "HEAD:$path" | md5sum | cut -c1-32)  rebuilt $(md5sum < "$path" | cut -c1-32)"
+                else
+                  echo "$code $path"
+                fi
+              done
+              echo '```'
+            fi
+            echo '<details><summary>last 60 lines of the log</summary>'
+            echo; echo '```'; tail -n 60 ../rebuild.log; echo '```'; echo '</details>'
+          } >> "$GITHUB_STEP_SUMMARY"
+          level=warning; [ "$BLOCKING" = "true" ] && level=error
+          if [ "$status" -ne 0 ]; then
+            echo "::$level title=rebuild $PIECE::'$COMMAND' exited $status"
+          fi
+          if [ -n "$changes" ]; then
+            echo "::$level title=rebuild $PIECE::$(echo "$changes" | wc -l) file(s) differ after the rebuild; see the job summary"
+            git status --porcelain --untracked-files=all
+            git diff --stat
+          fi
+          if [ "$BLOCKING" = "true" ] && { [ "$status" -ne 0 ] || [ -n "$changes" ]; }; then
+            exit 1
+          fi
+          exit 0
