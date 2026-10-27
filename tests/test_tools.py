@@ -280,7 +280,10 @@ class Standards(unittest.TestCase):
         self.r.close()
 
     def test_clean_piece_passes(self):
-        self.r.commit("p", {"p/a.py": "import os\nimport pandas\n", "p/requirements.txt": "pandas==3.0.2\n", "p/raw/x.csv": "1\n", "p/raw/RETRIEVED.txt": "x.csv from somewhere\n"})
+        # raw/.gitattributes is not data: check.sh's raw/* glob skips hidden files
+        self.r.commit("p", {"p/a.py": "import os\nimport pandas\n", "p/requirements.txt": "pandas==3.0.2\n",
+                            "p/raw/x.csv": "1\n", "p/raw/RETRIEVED.txt": "x.csv from somewhere\n",
+                            "p/raw/.gitattributes": "* -text\n"})
         code, out = self.r.run("standards_fast.py", "--dir", "p")
         self.assertEqual(code, 0, out)
         self.assertIn("ALL CHECKS PASSED", out)

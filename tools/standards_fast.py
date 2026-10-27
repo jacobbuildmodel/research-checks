@@ -248,7 +248,9 @@ def run(d, length_exempt=(), skip=None, warn=None, exclude=()):
     if os.path.isdir(raw) and o.runs("provenance"):
         if os.path.isfile(raw + "/RETRIEVED.txt"):
             record = open(raw + "/RETRIEVED.txt", encoding="utf-8", errors="replace").read()
-            miss = [b for b in sorted(os.listdir(raw)) if b != "RETRIEVED.txt" and b not in record]
+            # check.sh's raw/* glob: hidden files (raw/.gitattributes) are not data
+            miss = [b for b in sorted(os.listdir(raw))
+                    if b != "RETRIEVED.txt" and not b.startswith(".") and b not in record]
             for b in miss:
                 o.fail("provenance", f"{raw}/{b} not recorded in RETRIEVED.txt")
             if not miss:
