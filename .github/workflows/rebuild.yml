@@ -107,7 +107,7 @@ jobs:
           for p in $CLEAN; do rm -rf -- "$p"; done
           bash -c "$COMMAND" > ../rebuild.log 2>&1
           status=$?
-          tail -n 60 ../rebuild.log
+          cat ../rebuild.log
           changes=$(git status --porcelain --untracked-files=all)
           {
             echo "### Rebuild: $PIECE"
