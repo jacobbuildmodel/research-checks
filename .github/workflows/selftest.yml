@@ -1,0 +1,63 @@
+# research-checks tests itself: the tools' unit tests, actionlint over every
+# workflow, and each reusable workflow called end to end on the fixture piece
+# in tests/e2e/ (a valid seal with its purpose review), at the commit under test.
+name: selftest
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+      - name: unit tests (throwaway git repositories)
+        run: python -m unittest discover -s tests -v
+      - name: actionlint (pinned release, checksum-verified)
+        env:
+          VERSION: 1.7.12
+          # sha256 of actionlint_1.7.12_linux_amd64.tar.gz, from the release's checksums file
+          SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          wget -q -O "$RUNNER_TEMP/actionlint.tar.gz" \
+            "https://github.com/rhysd/actionlint/releases/download/v${VERSION}/actionlint_${VERSION}_linux_amd64.tar.gz"
+          echo "${SHA256}  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" -color
+
+  seal:
+    uses: ./.github/workflows/seal.yml
+    with:
+      checks_sha: ${{ github.event.pull_request.head.sha || github.sha }}
+      config: tests/e2e/research-checks.toml
+
+  fast:
+    uses: ./.github/workflows/fast.yml
+    with:
+      checks_sha: ${{ github.event.pull_request.head.sha || github.sha }}
+      config: tests/e2e/research-checks.toml
+
+  standards:
+    uses: ./.github/workflows/standards.yml
+    with:
+      checks_sha: ${{ github.event.pull_request.head.sha || github.sha }}
+      config: tests/e2e/research-checks.toml
+
+  rebuild:
+    uses: ./.github/workflows/rebuild.yml
+    with:
+      checks_sha: ${{ github.event.pull_request.head.sha || github.sha }}
+      config: tests/e2e/research-checks.toml
+      blocking: true

@@ -1,0 +1,122 @@
+# Tier (i): seal integrity of every piece with a [pieces.<name>.seal] table in
+# the caller's .github/research-checks.toml, and the purpose gate on every
+# commit that adds a seal marker. See tools/seal_check.py for the rules.
+#
+# Call it with the same full sha twice:
+#   uses: jacobbuildmodel/research-checks/.github/workflows/seal.yml@<sha>
+#   with:
+#     checks_sha: <sha>
+# (a reusable workflow cannot read its own ref, so the tools are checked out
+# at checks_sha; both must name the same commit).
+name: seal
+
+on:
+  workflow_call:
+    inputs:
+      checks_sha:
+        description: Full commit sha of jacobbuildmodel/research-checks, the same as in uses
+        required: true
+        type: string
+      config:
+        description: Path of the configuration in the calling repository
+        required: false
+        type: string
+        default: .github/research-checks.toml
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+    working-directory: repo
+
+jobs:
+  pieces:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    outputs:
+      list: ${{ steps.list.outputs.list }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          path: repo
+          persist-credentials: false
+      - name: checks_sha is a full commit sha
+        env:
+          SHA: ${{ inputs.checks_sha }}
+        run: |
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "checks_sha must be the full 40-character sha of research-checks, the same as in uses:"; exit 1; }
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: jacobbuildmodel/research-checks
+          ref: ${{ inputs.checks_sha }}
+          path: checks
+          persist-credentials: false
+      - id: list
+        env:
+          CONFIG: ${{ inputs.config }}
+        run: echo "list=$(python3 ../checks/tools/rc.py pieces seal --config "$CONFIG")" >> "$GITHUB_OUTPUT"
+
+  purpose-gate:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          path: repo
+          fetch-depth: 0
+          persist-credentials: false
+      - name: checks_sha is a full commit sha
+        env:
+          SHA: ${{ inputs.checks_sha }}
+        run: |
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "checks_sha must be the full 40-character sha of research-checks, the same as in uses:"; exit 1; }
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: jacobbuildmodel/research-checks
+          ref: ${{ inputs.checks_sha }}
+          path: checks
+          persist-credentials: false
+      - name: purpose gate on every commit that adds a seal marker
+        run: |
+          set +e
+          python3 ../checks/tools/seal_check.py purpose > ../result.txt 2>&1
+          status=$?
+          cat ../result.txt
+          { echo '### Purpose gate'; echo '```'; cat ../result.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+
+  piece:
+    needs: pieces
+    if: needs.pieces.outputs.list != '[]'
+    name: ${{ matrix.piece.name }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        piece: ${{ fromJSON(needs.pieces.outputs.list) }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          path: repo
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: jacobbuildmodel/research-checks
+          ref: ${{ inputs.checks_sha }}
+          path: checks
+          persist-credentials: false
+      - name: seal integrity
+        env:
+          CONFIG: ${{ inputs.config }}
+          PIECE: ${{ matrix.piece.name }}
+        run: |
+          set +e
+          python3 ../checks/tools/seal_check.py piece "$PIECE" --config "$CONFIG" > ../result.txt 2>&1
+          status=$?
+          cat ../result.txt
+          { echo "### Seal: $PIECE"; echo '```'; cat ../result.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"

@@ -1,0 +1,13 @@
+# Seals made before the purpose gate (office/PURPOSE_PRINCIPLES.md, 15 October 2026).
+# The purpose gate in tools/seal_check.py passes these commits with a note instead of
+# asking for a PURPOSE_REVIEW.md. The list is closed: a seal made after the gate
+# meets the gate, and is never added here.
+#
+# repository        commit                                    path                          why
+coe-analysis        becba0212e984fce37d7d4a6bd07e5aa47be531a  erp/office/SEAL.txt           erp sealed 26 Sep 2026 (6d2a345), recorded here
+coe-analysis        e5f877b70f60f38a99248e6bd90a3e4063c45a65  pwm/SEAL_MANIFEST.md          pwm sealed 28 Sep 2026
+coe-analysis        dafb17615d7fbbacb7caf1671b1bdf294bd003bc  pwm/SEALED                    pwm data opened 28 Sep 2026
+coe-analysis        9e460349ebfc56bf313728e14243876e9dd6c9f4  sgd/SEAL_MANIFEST.md          sgd sealed 3 Oct 2026
+coe-analysis        59789e44e3f9092479d5197345437895c577aa6a  sgd/SEALED                    sgd data opened 3 Oct 2026
+hdb-affordability   7ee9b9169c36399a80400b0e2e9ef9bd6b5000af  cargradient/SEAL_MANIFEST.md  cargradient sealed 12 Oct 2026 (branch cargradient-wip)
+hdb-affordability   800ac1fea751310f170d83ff21f23460df4ce173  cargradient/SEALED            cargradient data key 12 Oct 2026 (branch cargradient-wip)

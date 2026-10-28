@@ -1,0 +1,98 @@
+# Tier (ii): for every piece with a [pieces.<name>.fast] table in the caller's
+# .github/research-checks.toml, its synthetic test suite (tests = "<dir>",
+# invented data only) and its manifest check (manifest = "<command>", e.g.
+# "python3 pwm/14_manifest.py --check": every committed md5 and number
+# verified without rebuilding anything). Each piece runs on its own Python
+# (python = "3.11" by default) with its own pinned requirements.
+#
+# Call it with the same full sha twice:
+#   uses: jacobbuildmodel/research-checks/.github/workflows/fast.yml@<sha>
+#   with:
+#     checks_sha: <sha>
+name: fast
+
+on:
+  workflow_call:
+    inputs:
+      checks_sha:
+        description: Full commit sha of jacobbuildmodel/research-checks, the same as in uses
+        required: true
+        type: string
+      config:
+        description: Path of the configuration in the calling repository
+        required: false
+        type: string
+        default: .github/research-checks.toml
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+    working-directory: repo
+
+jobs:
+  pieces:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    outputs:
+      list: ${{ steps.list.outputs.list }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          path: repo
+          persist-credentials: false
+      - name: checks_sha is a full commit sha
+        env:
+          SHA: ${{ inputs.checks_sha }}
+        run: |
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "checks_sha must be the full 40-character sha of research-checks, the same as in uses:"; exit 1; }
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: jacobbuildmodel/research-checks
+          ref: ${{ inputs.checks_sha }}
+          path: checks
+          persist-credentials: false
+      - id: list
+        env:
+          CONFIG: ${{ inputs.config }}
+        run: echo "list=$(python3 ../checks/tools/rc.py pieces fast --config "$CONFIG")" >> "$GITHUB_OUTPUT"
+
+  piece:
+    needs: pieces
+    if: needs.pieces.outputs.list != '[]'
+    name: ${{ matrix.piece.name }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        piece: ${{ fromJSON(needs.pieces.outputs.list) }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          path: repo
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: ${{ matrix.piece.python }}
+      - name: pinned requirements
+        if: matrix.piece.requirements != ''
+        env:
+          REQ: ${{ matrix.piece.requirements }}
+        run: |
+          args=()
+          for r in $REQ; do args+=(-r "$r"); done
+          python -m pip install --disable-pip-version-check "${args[@]}"
+          python --version
+      - name: synthetic test suite
+        if: matrix.piece.tests != ''
+        env:
+          TESTS: ${{ matrix.piece.tests }}
+        run: python -m unittest discover -s "$TESTS" -p "test_*.py" -v
+      - name: manifest check (committed md5s and numbers, nothing rebuilt)
+        if: ${{ !cancelled() && matrix.piece.manifest != '' }}
+        env:
+          MANIFEST: ${{ matrix.piece.manifest }}
+        run: bash -c "$MANIFEST"
