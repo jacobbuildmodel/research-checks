@@ -158,4 +158,10 @@ fixture is not research.
 python3 -m unittest discover -s tests -v
 ```
 
-Licence: MIT (see LICENSE).
+## Licence
+
+- **Code** (the tools, tests and workflows) is under the MIT licence: see `LICENSE`.
+- **Text** (this README) is under
+  [Creative Commons Attribution 4.0](https://creativecommons.org/licenses/by/4.0/) (CC BY 4.0).
+  Credit "Jacob Ong, The New Void Deck".
+- There is no raw data here. The test fixtures are built for the tests and are not research data.
